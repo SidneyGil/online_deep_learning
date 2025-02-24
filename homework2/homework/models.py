@@ -25,16 +25,11 @@ class ClassificationLoss(nn.Module):
         Returns:
             tensor, scalar loss
         """
-        raise NotImplementedError("ClassificationLoss.forward() is not implemented")
+        return torch.nn.functional.cross_entropy(logits, target)  # Compute loss
 
 
 class LinearClassifier(nn.Module):
-    def __init__(
-        self,
-        h: int = 64,
-        w: int = 64,
-        num_classes: int = 6,
-    ):
+    def __init__(self, h: int = 64, w: int = 64, num_classes: int = 6):
         """
         Args:
             h: int, height of the input image
@@ -42,8 +37,10 @@ class LinearClassifier(nn.Module):
             num_classes: int, number of classes
         """
         super().__init__()
-
-        raise NotImplementedError("LinearClassifier.__init__() is not implemented")
+        layers = []
+        layers.append(nn.Flatten())  # Flatten image
+        layers.append(nn.Linear(h * w * 3, num_classes))  # Fully connected layer
+        self.model = torch.nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -53,103 +50,96 @@ class LinearClassifier(nn.Module):
         Returns:
             tensor (b, num_classes) logits
         """
-        raise NotImplementedError("LinearClassifier.forward() is not implemented")
+        return self.model(x)  # Forward pass
 
 
 class MLPClassifier(nn.Module):
-    def __init__(
-        self,
-        h: int = 64,
-        w: int = 64,
-        num_classes: int = 6,
-    ):
-        """
-        An MLP with a single hidden layer
+    class Block(torch.nn.Module):
+        def __init__(self, in_channels, out_channels):
+            super().__init__()
+            self.model = torch.nn.Sequential(
+                torch.nn.Linear(in_channels, out_channels),
+                torch.nn.LayerNorm(out_channels),
+                torch.nn.ReLU(),
+            )  # Apply normalization and activation
 
-        Args:
-            h: int, height of the input image
-            w: int, width of the input image
-            num_classes: int, number of classes
-        """
+            if in_channels != out_channels:
+                self.skip = torch.nn.Linear(in_channels, out_channels)  # Adjust dimensions if needed
+            else:
+                self.skip = torch.nn.Identity()  # No transformation
+
+        def forward(self, x):
+            return self.model(x) + self.skip(x)  # Add residual connection
+
+    def __init__(self, h: int = 64, w: int = 64, num_classes: int = 6, hidden_dim: int = 128):
         super().__init__()
-
-        raise NotImplementedError("MLPClassifier.__init__() is not implemented")
+        layers = []
+        layers.append(torch.nn.Flatten())  # Flatten input
+        layers.append(torch.nn.Linear(h * w * 3, hidden_dim))  # Initial dense layer
+        layers.append(self.Block(hidden_dim, hidden_dim))  # Apply residual block
+        layers.append(torch.nn.Linear(hidden_dim, num_classes))  # Output layer
+        self.model = torch.nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            x: tensor (b, 3, H, W) image
-
-        Returns:
-            tensor (b, num_classes) logits
-        """
-        raise NotImplementedError("MLPClassifier.forward() is not implemented")
+        return self.model(x)  # Forward pass
 
 
 class MLPClassifierDeep(nn.Module):
-    def __init__(
-        self,
-        h: int = 64,
-        w: int = 64,
-        num_classes: int = 6,
-    ):
-        """
-        An MLP with multiple hidden layers
+    class Block(torch.nn.Module):
+        def __init__(self, in_channels, out_channels):
+            super().__init__()
+            self.model = torch.nn.Sequential(
+                torch.nn.Linear(in_channels, out_channels),
+                torch.nn.LayerNorm(out_channels),
+                torch.nn.ReLU(),
+            )  # Basic fully connected block
 
-        Args:
-            h: int, height of image
-            w: int, width of image
-            num_classes: int
+        def forward(self, x):
+            return self.model(x)  # Pass input through the block
 
-        Hint - you can add more arguments to the constructor such as:
-            hidden_dim: int, size of hidden layers
-            num_layers: int, number of hidden layers
-        """
+    def __init__(self, h: int = 64, w: int = 64, num_classes: int = 6, num_layers: int = 4, hidden_dim: int = 128):
         super().__init__()
-
-        raise NotImplementedError("MLPClassifierDeep.__init__() is not implemented")
+        layers = []
+        layers.append(torch.nn.Flatten())  # Flatten input
+        layers.extend([torch.nn.Linear(h * w * 3, hidden_dim), torch.nn.ReLU()])  # First layer
+        layers.extend([self.Block(hidden_dim, hidden_dim) for _ in range(num_layers - 1)])  # Stack multiple blocks
+        layers.append(torch.nn.Linear(hidden_dim, num_classes))  # Final output layer
+        self.model = torch.nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            x: tensor (b, 3, H, W) image
-
-        Returns:
-            tensor (b, num_classes) logits
-        """
-        raise NotImplementedError("MLPClassifierDeep.forward() is not implemented")
+        return self.model(x)  # Forward pass
 
 
 class MLPClassifierDeepResidual(nn.Module):
-    def __init__(
-        self,
-        h: int = 64,
-        w: int = 64,
-        num_classes: int = 6,
-    ):
-        """
-        Args:
-            h: int, height of image
-            w: int, width of image
-            num_classes: int
+    class Block(torch.nn.Module):
+        def __init__(self, in_channels, out_channels):
+            super().__init__()
+            self.model = torch.nn.Sequential(
+                torch.nn.Linear(in_channels, out_channels),
+                torch.nn.LayerNorm(out_channels),
+                torch.nn.ReLU(),
+            )  # Fully connected block with activation
 
-        Hint - you can add more arguments to the constructor such as:
-            hidden_dim: int, size of hidden layers
-            num_layers: int, number of hidden layers
-        """
+            if in_channels != out_channels:
+                self.skip = torch.nn.Linear(in_channels, out_channels)  # Adjust residual connection
+            else:
+                self.skip = torch.nn.Identity()  # Identity mapping
+
+        def forward(self, x):
+            return self.model(x) + self.skip(x)  # Add skip connection
+
+    def __init__(self, h: int = 64, w: int = 64, num_classes: int = 6, num_layers: int = 6, hidden_dim: int = 128):
         super().__init__()
-
-        raise NotImplementedError("MLPClassifierDeepResidual.__init__() is not implemented")
+        layers = []
+        layers.append(torch.nn.Flatten())  # Flatten input
+        in_channels = h * w * 3
+        layers.append(nn.Linear(in_channels, hidden_dim))  # Initial layer
+        layers.extend([self.Block(hidden_dim, hidden_dim) for _ in range(num_layers - 1)])  # Apply residual blocks
+        layers.append(torch.nn.Linear(hidden_dim, num_classes))  # Output layer
+        self.model = torch.nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            x: tensor (b, 3, H, W) image
-
-        Returns:
-            tensor (b, num_classes) logits
-        """
-        raise NotImplementedError("MLPClassifierDeepResidual.forward() is not implemented")
+        return self.model(x)  # Forward pass
 
 
 model_factory = {
@@ -168,7 +158,7 @@ def calculate_model_size_mb(model: torch.nn.Module) -> float:
     Returns:
         float, size in megabytes
     """
-    return sum(p.numel() for p in model.parameters()) * 4 / 1024 / 1024
+    return sum(p.numel() for p in model.parameters()) * 4 / 1024 / 1024  # Convert parameters to MB
 
 
 def save_model(model):
@@ -177,8 +167,8 @@ def save_model(model):
     """
     for n, m in model_factory.items():
         if isinstance(model, m):
-            return torch.save(model.state_dict(), Path(__file__).resolve().parent / f"{n}.th")
-    raise ValueError(f"Model type '{str(type(model))}' not supported")
+            return torch.save(model.state_dict(), Path(__file__).resolve().parent / f"{n}.th")  # Save model state
+    raise ValueError(f"Model type '{str(type(model))}' not supported")  # Handle unsupported models
 
 
 def load_model(model_name: str, with_weights: bool = False, **model_kwargs):
@@ -188,18 +178,17 @@ def load_model(model_name: str, with_weights: bool = False, **model_kwargs):
     r = model_factory[model_name](**model_kwargs)
     if with_weights:
         model_path = Path(__file__).resolve().parent / f"{model_name}.th"
-        assert model_path.exists(), f"{model_path.name} not found"
+        assert model_path.exists(), f"{model_path.name} not found"  # Ensure model file exists
         try:
-            r.load_state_dict(torch.load(model_path, map_location="cpu"))
+            r.load_state_dict(torch.load(model_path, map_location="cpu"))  # Load model weights
         except RuntimeError as e:
             raise AssertionError(
                 f"Failed to load {model_path.name}, make sure the default model arguments are set correctly"
             ) from e
 
-    # Limit model sizes since they will be zipped and submitted
     model_size_mb = calculate_model_size_mb(r)
     if model_size_mb > 10:
-        raise AssertionError(f"{model_name} is too large: {model_size_mb:.2f} MB")
-    print(f"Model size: {model_size_mb:.2f} MB")
+        raise AssertionError(f"{model_name} is too large: {model_size_mb:.2f} MB")  # Enforce size limit
+    print(f"Model size: {model_size_mb:.2f} MB")  # Log model size
 
-    return r
+    return r  # Return the model
